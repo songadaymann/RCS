@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RCS Debug - Pivot Test</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a0f;
+    }
+    #renderCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    
+    /* Debug Panel */
+    #debugPanel {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 15px;
+      border-radius: 8px;
+      color: #0f0;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-width: 350px;
+      z-index: 1000;
+      border: 1px solid #0f0;
+    }
+    #debugPanel h3 {
+      margin-bottom: 10px;
+      color: #0ff;
+      font-size: 14px;
+    }
+    #debugPanel label {
+      display: block;
+      margin-bottom: 3px;
+      color: #aaa;
+    }
+    #debugPanel input[type="range"] {
+      width: 100%;
+      margin-bottom: 5px;
+    }
+    #debugPanel .value {
+      color: #ff0;
+      float: right;
+    }
+    #debugPanel .section {
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #333;
+    }
+    #debugPanel .info {
+      background: #111;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    #debugPanel button {
+      background: #0a0;
+      color: #000;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 5px;
+      margin-top: 5px;
+      font-family: inherit;
+    }
+    #debugPanel button:hover {
+      background: #0f0;
+    }
+    #debugPanel .checkbox-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    #debugPanel .checkbox-row input {
+      margin-right: 8px;
+    }
+    
+    /* Controls help */
+    #controlsHelp {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 10px 15px;
+      border-radius: 8px;
+      color: #888;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      border: 1px solid #333;
+    }
+    #controlsHelp kbd {
+      background: #333;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+  
+  <div id="debugPanel">
+    <h3>🎯 RCS Pivot Debug</h3>
+    
+    <div class="section">
+      <label>X Position: <span class="value" id="xVal">0</span></label>
+      <input type="range" id="xSlider" min="-50" max="50" step="0.5" value="15">
+      
+      <label>Y Position: <span class="value" id="yVal">0</span></label>
+      <input type="range" id="ySlider" min="-10" max="30" step="0.1" value="0">
+      
+      <label>Z Position: <span class="value" id="zVal">0</span></label>
+      <input type="range" id="zSlider" min="-50" max="50" step="0.5" value="0">
+    </div>
+    
+    <div class="section">
+      <label>Scale: <span class="value" id="scaleVal">0.3</span></label>
+      <input type="range" id="scaleSlider" min="0.005" max="2" step="0.005" value="0.3">
+    </div>
+    
+    <div class="section">
+      <label>Pitch (X rot): <span class="value" id="pitchVal">1.57</span></label>
+      <input type="range" id="pitchSlider" min="-3.14" max="3.14" step="0.01" value="1.57">
+      
+      <label>Yaw (Y rot): <span class="value" id="yawVal">-0.26</span></label>
+      <input type="range" id="yawSlider" min="-3.14" max="3.14" step="0.01" value="-0.26">
+      
+      <label>Roll (Z rot): <span class="value" id="rollVal">1.31</span></label>
+      <input type="range" id="rollSlider" min="-3.14" max="3.14" step="0.01" value="1.31">
+    </div>
+    
+    <div class="section">
+      <div class="checkbox-row">
+        <input type="checkbox" id="showPivot" checked>
+        <label for="showPivot" style="display: inline; margin: 0;">Show Pivot Point (red sphere)</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showBounds" checked>
+        <label for="showBounds" style="display: inline; margin: 0;">Show Bounding Box</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showAxes" checked>
+        <label for="showAxes" style="display: inline; margin: 0;">Show Axis Lines</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showGroundMarker">
+        <label for="showGroundMarker" style="display: inline; margin: 0;">Show Ground Level Plane</label>
+      </div>
+      <div class="checkbox-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;">
+        <input type="checkbox" id="playAnimation">
+        <label for="playAnimation" style="display: inline; margin: 0; color: #f80;">🚶 Play Walking Animation (old)</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="useBakedModel">
+        <label for="useBakedModel" style="display: inline; margin: 0; color: #0ff;">✨ Use RCS-walking.glb (baked)</label>
+      </div>
+    </div>
+    
+    <button id="resetBtn">Reset to Default</button>
+    <button id="copyBtn">Copy Values</button>
+    
+    <div class="info" id="infoBox">
+      Loading RCS model...
+    </div>
+  </div>
+  
+  <div id="controlsHelp">
+    <strong>Controls:</strong><br>
+    <kbd>WASD</kbd> Move | <kbd>Mouse</kbd> Look | <kbd>Space</kbd> Jump<br>
+    Click to lock cursor | <kbd>ESC</kbd> to unlock
+  </div>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+  <script>
+    const canvas = document.getElementById("renderCanvas");
+    const engine = new BABYLON.Engine(canvas, true);
+    
+    // Input state
+    const inputState = { forward: false, back: false, left: false, right: false, jump: false };
+    let playerVelocityY = 0;
+    const jumpForce = 20;
+    const gravity = 30;
+    const moveSpeed = 10;
+    const playerHeight = 1.6;
+    
+    // Store references
+    let rcsRoot = null;
+    let pivotSphere = null;
+    let boundingBoxLines = null;
+    let axisLines = null;
+    let groundPlane = null;
+    let groundY = 0;
+    let rcsWalkAnim = null; // Walking animation group (old method)
+    let bakedRcsRoot = null; // Baked animation model
+    let bakedAnimGroup = null; // Animation from baked model
+    let currentScene = null;
+    let currentCamera = null;
+    let usingBakedModel = false;
+    
+    // Key handlers
+    document.addEventListener("keydown", (e) => {
+      switch (e.key.toLowerCase()) {
+        case "w": case "arrowup": inputState.forward = true; break;
+        case "s": case "arrowdown": inputState.back = true; break;
+        case "a": case "arrowleft": inputState.left = true; break;
+        case "d": case "arrowright": inputState.right = true; break;
+        case " ": case "shift": inputState.jump = true; break;
+      }
+    });
+    document.addEventListener("keyup", (e) => {
+      switch (e.key.toLowerCase()) {
+        case "w": case "arrowup": inputState.forward = false; break;
+        case "s": case "arrowdown": inputState.back = false; break;
+        case "a": case "arrowleft": inputState.left = false; break;
+        case "d": case "arrowright": inputState.right = false; break;
+        case " ": case "shift": inputState.jump = false; break;
+      }
+    });
+    
+    async function createScene() {
+      const scene = new BABYLON.Scene(engine);
+      scene.clearColor = new BABYLON.Color4(0.02, 0.03, 0.05, 1);
+      
+      // Camera
+      const camera = new BABYLON.UniversalCamera(
+        "camera",
+        new BABYLON.Vector3(0, playerHeight, -20),
+        scene
+      );
+      camera.minZ = 0.1;
+      camera.maxZ = 1000;
+      camera.inputs.clear();
+      camera.rotation.y = 0;
+      
+      // Mouse look
+      const lookSpeed = 0.002;
+      canvas.addEventListener("pointermove", (evt) => {
+        if (document.pointerLockElement === canvas) {
+          camera.rotation.y += evt.movementX * lookSpeed;
+          camera.rotation.x += evt.movementY * lookSpeed;
+          camera.rotation.x = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, camera.rotation.x));
+        }
+      });
+      canvas.addEventListener("click", () => {
+        if (document.pointerLockElement !== canvas) {
+          canvas.requestPointerLock();
+        }
+      });
+      
+      // Lighting
+      const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0.2, 1, 0.2), scene);
+      hemi.intensity = 1.5;
+      hemi.diffuse = new BABYLON.Color3(0.8, 0.85, 1.0);
+      
+      // Load city
+      console.log("Loading city...");
+      const cityResult = await BABYLON.SceneLoader.ImportMeshAsync("", "./assets/", "lowPolyCity.glb", scene);
+      const cityRoot = cityResult.meshes[0];
+      
+      // XCOPY texture on city
+      const cityMat = new BABYLON.StandardMaterial("cityXcopyMat", scene);
+      const xcopyTexture = new BABYLON.VideoTexture(
+        "cityXcopyVideo", "./assets/xcopy-skybox.mp4", scene, true, false,
+        BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+        { autoPlay: true, loop: true, muted: true, autoUpdateTexture: true }
+      );
+      xcopyTexture.uScale = 2;
+      xcopyTexture.vScale = 2;
+      cityMat.diffuseTexture = xcopyTexture;
+      cityMat.emissiveTexture = xcopyTexture;
+      cityMat.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+      cityMat.specularColor = new BABYLON.Color3(0, 0, 0);
+      
+      cityRoot.getChildMeshes().forEach(m => {
+        m.isPickable = true;
+        m.material = cityMat;
+      });
+      
+      const cityBounds = cityRoot.getHierarchyBoundingVectors();
+      console.log("City bounds:", cityBounds.min.toString(), "to", cityBounds.max.toString());
+      
+      // Ground plane
+      const citySize = cityBounds.max.subtract(cityBounds.min);
+      const groundSize = Math.max(citySize.x, citySize.z) * 3;
+      const cityGround = BABYLON.MeshBuilder.CreateGround("cityGround", { width: groundSize, height: groundSize }, scene);
+      cityGround.position.x = (cityBounds.min.x + cityBounds.max.x) / 2;
+      cityGround.position.z = (cityBounds.min.z + cityBounds.max.z) / 2;
+      cityGround.position.y = cityBounds.min.y + 46;
+      groundY = cityGround.position.y;
+      
+      const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+      const asphaltTex = new BABYLON.Texture("./assets/textures/CityStreetAsphaltGenericClean001/CityStreetAsphaltGenericClean001_COL_2K.jpg", scene);
+      asphaltTex.uScale = 20;
+      asphaltTex.vScale = 20;
+      groundMat.diffuseTexture = asphaltTex;
+      cityGround.material = groundMat;
+      
+      // City skybox
+      const skyboxResult = await BABYLON.SceneLoader.ImportMeshAsync("", "./assets/", "city-skybox.glb", scene);
+      const skyboxRoot = skyboxResult.meshes[0];
+      skyboxRoot.scaling = new BABYLON.Vector3(0.4, 0.4, 0.4);
+      skyboxRoot.getChildMeshes().forEach(m => {
+        m.isPickable = false;
+        if (m.material) {
+          m.material.disableLighting = true;
+          if (m.material.diffuseTexture) m.material.emissiveTexture = m.material.diffuseTexture;
+        }
+      });
+      scene.onBeforeRenderObservable.add(() => {
+        skyboxRoot.position.x = camera.position.x;
+        skyboxRoot.position.z = camera.position.z;
+      });
+      
+      // Position camera
+      camera.position.x = (cityBounds.min.x + cityBounds.max.x) / 2;
+      camera.position.z = (cityBounds.min.z + cityBounds.max.z) / 2 - 20;
+      camera.position.y = groundY + playerHeight;
+      
+      // Load RCS
+      console.log("Loading RCS...");
+      const rcsResult = await BABYLON.SceneLoader.ImportMeshAsync("", "./assets/", "rcs.glb", scene);
+      rcsRoot = rcsResult.meshes[0];
+      
+      // Initial position/scale
+      const initialX = camera.position.x;
+      const initialZ = camera.position.z + 15;
+      rcsRoot.position = new BABYLON.Vector3(initialX, groundY, initialZ);
+      rcsRoot.scaling = new BABYLON.Vector3(0.3, 0.3, 0.3);
+      rcsRoot.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(1.57, -0.26, 1.31);
+      
+      // Update slider initial values to match position
+      document.getElementById("xSlider").value = 15;
+      document.getElementById("ySlider").value = 0;
+      document.getElementById("zSlider").value = 0;
+      
+      // Get RCS bounds
+      const rcsBounds = rcsRoot.getHierarchyBoundingVectors();
+      const rcsHeight = rcsBounds.max.y - rcsBounds.min.y;
+      console.log("RCS model bounds:", rcsBounds.min.toString(), "to", rcsBounds.max.toString());
+      console.log("RCS height:", rcsHeight);
+      
+      // Load walking animation (same as main game)
+      const rcsSkeleton = rcsResult.skeletons[0];
+      const walkAnimResult = await BABYLON.SceneLoader.ImportMeshAsync(
+        "", "./assets/animations/glb/", "Walking.glb", scene
+      );
+      walkAnimResult.meshes.forEach(m => m.isVisible = false);
+      const sourceAnimGroup = walkAnimResult.animationGroups[0];
+      
+      if (rcsSkeleton && sourceAnimGroup) {
+        rcsWalkAnim = new BABYLON.AnimationGroup("rcsWalk", scene);
+        
+        // Retarget - only keep rotations (same as main game)
+        sourceAnimGroup.targetedAnimations.forEach(ta => {
+          const prop = ta.animation.targetProperty;
+          if (prop === "position" || prop === "scaling") return;
+          
+          const targetBone = rcsSkeleton.bones.find(b => b.name === ta.target.name);
+          if (targetBone) {
+            const clonedAnim = ta.animation.clone();
+            const transformNode = targetBone.getTransformNode();
+            if (transformNode) {
+              rcsWalkAnim.addTargetedAnimation(clonedAnim, transformNode);
+            }
+          }
+        });
+        
+        console.log("Walking animation loaded and retargeted!");
+      }
+      
+      // Create pivot visualization (red sphere at rcsRoot.position)
+      pivotSphere = BABYLON.MeshBuilder.CreateSphere("pivotSphere", { diameter: 0.3 }, scene);
+      const pivotMat = new BABYLON.StandardMaterial("pivotMat", scene);
+      pivotMat.emissiveColor = new BABYLON.Color3(1, 0, 0);
+      pivotMat.disableLighting = true;
+      pivotSphere.material = pivotMat;
+      
+      // Create axis lines at pivot
+      const axisLength = 3;
+      axisLines = [];
+      
+      // X axis (red)
+      const xAxis = BABYLON.MeshBuilder.CreateLines("xAxis", {
+        points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(axisLength, 0, 0)]
+      }, scene);
+      xAxis.color = new BABYLON.Color3(1, 0, 0);
+      axisLines.push(xAxis);
+      
+      // Y axis (green)
+      const yAxis = BABYLON.MeshBuilder.CreateLines("yAxis", {
+        points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, axisLength, 0)]
+      }, scene);
+      yAxis.color = new BABYLON.Color3(0, 1, 0);
+      axisLines.push(yAxis);
+      
+      // Z axis (blue)
+      const zAxis = BABYLON.MeshBuilder.CreateLines("zAxis", {
+        points: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, axisLength)]
+      }, scene);
+      zAxis.color = new BABYLON.Color3(0, 0, 1);
+      axisLines.push(zAxis);
+      
+      // Ground level marker plane (translucent)
+      groundPlane = BABYLON.MeshBuilder.CreateGround("groundMarker", { width: 10, height: 10 }, scene);
+      const groundMarkerMat = new BABYLON.StandardMaterial("groundMarkerMat", scene);
+      groundMarkerMat.emissiveColor = new BABYLON.Color3(0, 1, 0);
+      groundMarkerMat.alpha = 0.3;
+      groundMarkerMat.disableLighting = true;
+      groundPlane.material = groundMarkerMat;
+      groundPlane.isVisible = false;
+      
+      // Update info box
+      updateInfoBox(rcsBounds, rcsHeight);
+      
+      // Slider event handlers
+      const sliders = ["x", "y", "z", "scale", "pitch", "yaw", "roll"];
+      sliders.forEach(name => {
+        const slider = document.getElementById(name + "Slider");
+        if (slider) {
+          slider.addEventListener("input", () => updateRCS(camera));
+        }
+      });
+      
+      // Checkbox handlers
+      document.getElementById("showPivot").addEventListener("change", (e) => {
+        pivotSphere.isVisible = e.target.checked;
+      });
+      document.getElementById("showBounds").addEventListener("change", (e) => {
+        if (boundingBoxLines) boundingBoxLines.forEach(l => l.isVisible = e.target.checked);
+      });
+      document.getElementById("showAxes").addEventListener("change", (e) => {
+        axisLines.forEach(l => l.isVisible = e.target.checked);
+      });
+      document.getElementById("showGroundMarker").addEventListener("change", (e) => {
+        groundPlane.isVisible = e.target.checked;
+      });
+      
+      // Animation toggle (old method)
+      document.getElementById("playAnimation").addEventListener("change", (e) => {
+        if (usingBakedModel) {
+          e.target.checked = false;
+          console.log("Can't use old animation when baked model is active");
+          return;
+        }
+        if (rcsWalkAnim) {
+          if (e.target.checked) {
+            rcsWalkAnim.start(true, 0.3); // Loop at 0.3 speed like main game
+            console.log("Animation started - check if model sinks!");
+          } else {
+            rcsWalkAnim.stop();
+            rcsWalkAnim.reset();
+            console.log("Animation stopped - model should return to T-pose");
+          }
+          // Update bounds after animation state change
+          setTimeout(() => {
+            const newBounds = rcsRoot.getHierarchyBoundingVectors();
+            const newHeight = newBounds.max.y - newBounds.min.y;
+            updateInfoBox(newBounds, newHeight);
+            createBoundingBox(scene);
+          }, 100);
+        }
+      });
+      
+      // Store scene/camera for baked model loading
+      currentScene = scene;
+      currentCamera = camera;
+      
+      // Baked model toggle
+      document.getElementById("useBakedModel").addEventListener("change", async (e) => {
+        if (e.target.checked) {
+          // Load baked model
+          console.log("Loading RCS-walking.glb (baked animation)...");
+          
+          // Stop old animation if playing
+          if (rcsWalkAnim && rcsWalkAnim.isPlaying) {
+            rcsWalkAnim.stop();
+            document.getElementById("playAnimation").checked = false;
+          }
+          
+          // Hide old model
+          rcsRoot.setEnabled(false);
+          
+          // Load baked model if not already loaded
+          if (!bakedRcsRoot) {
+            try {
+              const bakedResult = await BABYLON.SceneLoader.ImportMeshAsync(
+                "", "./assets/", "RCS-walking.glb", scene
+              );
+              bakedRcsRoot = bakedResult.meshes[0];
+              
+              // Check for animations in the baked model
+              if (bakedResult.animationGroups && bakedResult.animationGroups.length > 0) {
+                bakedAnimGroup = bakedResult.animationGroups[0];
+                console.log("Found baked animation:", bakedAnimGroup.name);
+                bakedAnimGroup.start(true, 0.3); // Loop at same speed
+              }
+              
+              console.log("Baked model loaded! Meshes:", bakedResult.meshes.length);
+            } catch (err) {
+              console.error("Failed to load RCS-walking.glb:", err);
+              e.target.checked = false;
+              rcsRoot.setEnabled(true);
+              return;
+            }
+          } else {
+            bakedRcsRoot.setEnabled(true);
+            if (bakedAnimGroup) bakedAnimGroup.start(true, 0.3);
+          }
+          
+          // Apply same transforms as original
+          const x = parseFloat(document.getElementById("xSlider").value);
+          const y = parseFloat(document.getElementById("ySlider").value);
+          const z = parseFloat(document.getElementById("zSlider").value);
+          const scale = parseFloat(document.getElementById("scaleSlider").value);
+          const pitch = parseFloat(document.getElementById("pitchSlider").value);
+          const yaw = parseFloat(document.getElementById("yawSlider").value);
+          const roll = parseFloat(document.getElementById("rollSlider").value);
+          
+          const baseX = currentCamera.position.x;
+          const baseZ = currentCamera.position.z + 20;
+          
+          bakedRcsRoot.position = new BABYLON.Vector3(baseX + x, groundY + y, baseZ + z);
+          bakedRcsRoot.scaling = new BABYLON.Vector3(scale, scale, scale);
+          bakedRcsRoot.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(pitch, yaw, roll);
+          
+          usingBakedModel = true;
+          
+          // Update bounds display
+          setTimeout(() => {
+            const newBounds = bakedRcsRoot.getHierarchyBoundingVectors();
+            const newHeight = newBounds.max.y - newBounds.min.y;
+            updateInfoBox(newBounds, newHeight);
+            createBoundingBox(scene);
+          }, 100);
+          
+        } else {
+          // Switch back to old model
+          if (bakedRcsRoot) {
+            bakedRcsRoot.setEnabled(false);
+            if (bakedAnimGroup) bakedAnimGroup.stop();
+          }
+          rcsRoot.setEnabled(true);
+          usingBakedModel = false;
+          
+          // Update bounds display
+          setTimeout(() => {
+            const newBounds = rcsRoot.getHierarchyBoundingVectors();
+            const newHeight = newBounds.max.y - newBounds.min.y;
+            updateInfoBox(newBounds, newHeight);
+            createBoundingBox(scene);
+          }, 100);
+        }
+      });
+      
+      // Reset button
+      document.getElementById("resetBtn").addEventListener("click", () => {
+        document.getElementById("xSlider").value = 15;
+        document.getElementById("ySlider").value = 0;
+        document.getElementById("zSlider").value = 0;
+        document.getElementById("scaleSlider").value = 0.3;
+        document.getElementById("pitchSlider").value = 1.57;
+        document.getElementById("yawSlider").value = -0.26;
+        document.getElementById("rollSlider").value = 1.31;
+        updateRCS(camera);
+      });
+      
+      // Copy button
+      document.getElementById("copyBtn").addEventListener("click", () => {
+        const values = {
+          position: { x: parseFloat(document.getElementById("xSlider").value), y: parseFloat(document.getElementById("ySlider").value), z: parseFloat(document.getElementById("zSlider").value) },
+          scale: parseFloat(document.getElementById("scaleSlider").value),
+          rotation: { pitch: parseFloat(document.getElementById("pitchSlider").value), yaw: parseFloat(document.getElementById("yawSlider").value), roll: parseFloat(document.getElementById("rollSlider").value) }
+        };
+        const text = JSON.stringify(values, null, 2);
+        navigator.clipboard.writeText(text).then(() => alert("Values copied to clipboard!"));
+      });
+      
+      // Create bounding box visualization
+      createBoundingBox(scene);
+      
+      // Initial update
+      updateRCS(camera);
+      
+      // Main loop
+      scene.onBeforeRenderObservable.add(() => {
+        const dt = engine.getDeltaTime() * 0.001;
+        
+        // Movement
+        const forward = camera.getDirection(BABYLON.Axis.Z);
+        const right = camera.getDirection(BABYLON.Axis.X);
+        forward.y = 0;
+        right.y = 0;
+        forward.normalize();
+        right.normalize();
+        
+        let move = BABYLON.Vector3.Zero();
+        if (inputState.forward) move.addInPlace(forward);
+        if (inputState.back) move.subtractInPlace(forward);
+        if (inputState.left) move.subtractInPlace(right);
+        if (inputState.right) move.addInPlace(right);
+        if (move.lengthSquared() > 0) {
+          move.normalize().scaleInPlace(moveSpeed * dt);
+          camera.position.addInPlace(move);
+        }
+        
+        // Jump
+        const onGround = camera.position.y <= groundY + playerHeight + 0.1;
+        if (inputState.jump && onGround) playerVelocityY = jumpForce;
+        playerVelocityY -= gravity * dt;
+        camera.position.y += playerVelocityY * dt;
+        if (camera.position.y < groundY + playerHeight) {
+          camera.position.y = groundY + playerHeight;
+          playerVelocityY = 0;
+        }
+        
+        // Update debug visuals
+        updateDebugVisuals(camera);
+      });
+      
+      return scene;
+    }
+    
+    function updateRCS(camera) {
+      if (!rcsRoot) return;
+      
+      const x = parseFloat(document.getElementById("xSlider").value);
+      const y = parseFloat(document.getElementById("ySlider").value);
+      const z = parseFloat(document.getElementById("zSlider").value);
+      const scale = parseFloat(document.getElementById("scaleSlider").value);
+      const pitch = parseFloat(document.getElementById("pitchSlider").value);
+      const yaw = parseFloat(document.getElementById("yawSlider").value);
+      const roll = parseFloat(document.getElementById("rollSlider").value);
+      
+      // Position relative to camera initial position + offset
+      const baseX = camera ? camera.position.x : 0;
+      const baseZ = camera ? camera.position.z + 20 : 0;
+      
+      // Update original model
+      rcsRoot.position.x = baseX + x;
+      rcsRoot.position.y = groundY + y;
+      rcsRoot.position.z = baseZ + z;
+      rcsRoot.scaling = new BABYLON.Vector3(scale, scale, scale);
+      rcsRoot.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(pitch, yaw, roll);
+      
+      // Also update baked model if it exists
+      if (bakedRcsRoot) {
+        bakedRcsRoot.position.x = baseX + x;
+        bakedRcsRoot.position.y = groundY + y;
+        bakedRcsRoot.position.z = baseZ + z;
+        bakedRcsRoot.scaling = new BABYLON.Vector3(scale, scale, scale);
+        bakedRcsRoot.rotationQuaternion = BABYLON.Quaternion.FromEulerAngles(pitch, yaw, roll);
+      }
+      
+      // Update value displays
+      document.getElementById("xVal").textContent = x.toFixed(1);
+      document.getElementById("yVal").textContent = y.toFixed(1);
+      document.getElementById("zVal").textContent = z.toFixed(1);
+      document.getElementById("scaleVal").textContent = scale.toFixed(2);
+      document.getElementById("pitchVal").textContent = pitch.toFixed(2);
+      document.getElementById("yawVal").textContent = yaw.toFixed(2);
+      document.getElementById("rollVal").textContent = roll.toFixed(2);
+      
+      // Update bounding box (use active model)
+      const activeModel = usingBakedModel && bakedRcsRoot ? bakedRcsRoot : rcsRoot;
+      if (boundingBoxLines) {
+        createBoundingBox(activeModel.getScene());
+      }
+      
+      // Update info
+      const rcsBounds = activeModel.getHierarchyBoundingVectors();
+      const rcsHeight = rcsBounds.max.y - rcsBounds.min.y;
+      updateInfoBox(rcsBounds, rcsHeight);
+    }
+    
+    function updateDebugVisuals(camera) {
+      // Use active model
+      const activeModel = (usingBakedModel && bakedRcsRoot) ? bakedRcsRoot : rcsRoot;
+      if (!activeModel) return;
+      
+      // Move pivot sphere to active model position
+      if (pivotSphere) {
+        pivotSphere.position.copyFrom(activeModel.position);
+      }
+      
+      // Move axis lines to active model position
+      if (axisLines) {
+        axisLines.forEach(axis => {
+          axis.position.copyFrom(activeModel.position);
+        });
+      }
+      
+      // Ground plane at active model X/Z, ground Y
+      if (groundPlane) {
+        groundPlane.position.x = activeModel.position.x;
+        groundPlane.position.z = activeModel.position.z;
+        groundPlane.position.y = groundY + 0.01;
+      }
+    }
+    
+    function createBoundingBox(scene) {
+      // Remove old lines
+      if (boundingBoxLines) {
+        boundingBoxLines.forEach(l => l.dispose());
+      }
+      boundingBoxLines = [];
+      
+      // Use active model
+      const activeModel = (usingBakedModel && bakedRcsRoot) ? bakedRcsRoot : rcsRoot;
+      if (!activeModel) return;
+      
+      const bounds = activeModel.getHierarchyBoundingVectors();
+      const min = bounds.min;
+      const max = bounds.max;
+      
+      // 12 edges of the bounding box
+      const edges = [
+        // Bottom face
+        [new BABYLON.Vector3(min.x, min.y, min.z), new BABYLON.Vector3(max.x, min.y, min.z)],
+        [new BABYLON.Vector3(max.x, min.y, min.z), new BABYLON.Vector3(max.x, min.y, max.z)],
+        [new BABYLON.Vector3(max.x, min.y, max.z), new BABYLON.Vector3(min.x, min.y, max.z)],
+        [new BABYLON.Vector3(min.x, min.y, max.z), new BABYLON.Vector3(min.x, min.y, min.z)],
+        // Top face
+        [new BABYLON.Vector3(min.x, max.y, min.z), new BABYLON.Vector3(max.x, max.y, min.z)],
+        [new BABYLON.Vector3(max.x, max.y, min.z), new BABYLON.Vector3(max.x, max.y, max.z)],
+        [new BABYLON.Vector3(max.x, max.y, max.z), new BABYLON.Vector3(min.x, max.y, max.z)],
+        [new BABYLON.Vector3(min.x, max.y, max.z), new BABYLON.Vector3(min.x, max.y, min.z)],
+        // Vertical edges
+        [new BABYLON.Vector3(min.x, min.y, min.z), new BABYLON.Vector3(min.x, max.y, min.z)],
+        [new BABYLON.Vector3(max.x, min.y, min.z), new BABYLON.Vector3(max.x, max.y, min.z)],
+        [new BABYLON.Vector3(max.x, min.y, max.z), new BABYLON.Vector3(max.x, max.y, max.z)],
+        [new BABYLON.Vector3(min.x, min.y, max.z), new BABYLON.Vector3(min.x, max.y, max.z)],
+      ];
+      
+      edges.forEach((edge, i) => {
+        const line = BABYLON.MeshBuilder.CreateLines("bbLine" + i, { points: edge }, scene);
+        line.color = new BABYLON.Color3(1, 1, 0); // Yellow
+        boundingBoxLines.push(line);
+      });
+    }
+    
+    function updateInfoBox(bounds, height) {
+      const info = document.getElementById("infoBox");
+      
+      // Use active model
+      const activeModel = (usingBakedModel && bakedRcsRoot) ? bakedRcsRoot : rcsRoot;
+      if (!activeModel) return;
+      
+      const pos = activeModel.position;
+      const pivotRelToGround = pos.y - groundY;
+      const boundsMinRelToGround = bounds.min.y - groundY;
+      const boundsMaxRelToGround = bounds.max.y - groundY;
+      
+      const animPlaying = usingBakedModel 
+        ? (bakedAnimGroup && bakedAnimGroup.isPlaying)
+        : (rcsWalkAnim && rcsWalkAnim.isPlaying);
+      const animStatus = animPlaying 
+        ? '<span style="color: #0f0;">▶ PLAYING</span>' 
+        : '<span style="color: #888;">⏸ STOPPED</span>';
+      
+      const modelStatus = usingBakedModel
+        ? '<span style="color: #0ff;">RCS-walking.glb (BAKED)</span>'
+        : '<span style="color: #f80;">rcs.glb (original)</span>';
+      
+      info.innerHTML = `
+        <strong>Model:</strong> ${modelStatus}<br>
+        <strong>Animation:</strong> ${animStatus}<br><br>
+        
+        <strong>RCS Position (world):</strong><br>
+        X: ${pos.x.toFixed(2)}, Y: ${pos.y.toFixed(2)}, Z: ${pos.z.toFixed(2)}<br><br>
+        
+        <strong>Pivot Y relative to ground:</strong><br>
+        ${pivotRelToGround.toFixed(2)} (0 = on ground)<br><br>
+        
+        <strong>Bounding Box (world Y):</strong><br>
+        Min Y: ${bounds.min.y.toFixed(2)} (<span style="color: ${boundsMinRelToGround < 0 ? '#f00' : '#0f0'}">${boundsMinRelToGround.toFixed(2)}</span> from ground)<br>
+        Max Y: ${bounds.max.y.toFixed(2)} (${boundsMaxRelToGround.toFixed(2)} from ground)<br>
+        Height: ${height.toFixed(2)}<br><br>
+        
+        <strong>Ground Level:</strong> ${groundY.toFixed(2)}<br><br>
+        
+        <span style="color: #f80;">Toggle animation to see if bounds change!</span><br>
+        <span style="color: #888;">If minY goes negative when animating,<br>
+        that's how much to add to heightOffset.</span>
+      `;
+    }
+    
+    createScene().then((scene) => {
+      engine.runRenderLoop(() => scene.render());
+    });
+    
+    window.addEventListener("resize", () => engine.resize());
+  </script>
+</body>
+</html>
+
