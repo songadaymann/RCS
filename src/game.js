@@ -203,6 +203,10 @@ const enemyDamage = 15; // Damage per enemy hit
 let hitFlashTimer = 0;
 const hitFlashDuration = 0.15; // seconds
 
+// Respawn system (set when game initializes)
+let playerSpawnPosition = null; // Set when level loads
+let lastSafePosition = null; // Updated periodically when on ground
+
 // Kill counter
 let killCount = 0;
 
@@ -302,11 +306,38 @@ function damagePlayer(amount) {
     setTimeout(() => hitFlash.classList.remove('active'), 150);
   }
   
-  // Check for death
+  // Check for death - respawn instead of game over
   if (playerHealth <= 0) {
-    console.log("PLAYER DIED!");
-    // TODO: Game over screen
+    console.log("PLAYER DIED! Respawning...");
+    respawnPlayer();
   }
+}
+
+// Respawn the player (keeps progress, restores health)
+function respawnPlayer() {
+  const camera = window.gameCamera;
+  if (!camera) return;
+  
+  // Choose respawn position: last safe position or spawn point
+  const respawnPos = lastSafePosition || playerSpawnPosition;
+  if (respawnPos) {
+    camera.position.x = respawnPos.x;
+    camera.position.y = respawnPos.y;
+    camera.position.z = respawnPos.z;
+  }
+  
+  // Reset player state
+  playerHealth = maxHealth;
+  playerVelocityY = 0;
+  jumpsRemaining = 0;
+  updateHealthHUD();
+  
+  // Show "RESPAWN" announcement briefly
+  showWaveAnnouncement("RESPAWN", "survive");
+  setTimeout(() => {
+    const announce = document.getElementById('waveAnnounce');
+    if (announce) announce.classList.remove('visible');
+  }, 1500);
 }
 // Expose for city level laser damage
 window.damagePlayer = damagePlayer;
@@ -1536,6 +1567,133 @@ class ExplosionManager {
   }
 }
 
+// Boss Laser Manager - Green xcopy-style lasers from boss glasses
+class BossLaserManager {
+  constructor(scene, explosionManager) {
+    this.scene = scene;
+    this.explosionManager = explosionManager;
+    this.lasers = [];
+    this.fireInterval = 1.5; // Seconds between laser volleys
+    this.laserDuration = 0.3; // How long each laser beam stays visible
+    this.lastFireTime = 0;
+    this.damage = 10; // Damage per laser hit
+    this.laserSpeed = 120; // Units per second for projectile lasers
+  }
+
+  // Fire lasers from glasses toward player
+  fireLaser(fromPos, toPos) {
+    const direction = toPos.subtract(fromPos);
+    const distance = direction.length();
+    direction.normalize();
+    
+    // Create laser beam as a thin cylinder (longer beam)
+    const laser = BABYLON.MeshBuilder.CreateCylinder(
+      "bossLaser",
+      { height: 10, diameter: 0.4 },
+      this.scene
+    );
+    
+    // Xcopy-style GREEN laser material
+    const laserMat = new BABYLON.StandardMaterial("bossLaserMat", this.scene);
+    laserMat.emissiveColor = new BABYLON.Color3(0, 1, 0.3); // Bright green
+    laserMat.diffuseColor = new BABYLON.Color3(0.2, 1, 0.4);
+    laserMat.alpha = 0.9;
+    laserMat.disableLighting = true;
+    laser.material = laserMat;
+    
+    // Start at glasses position
+    laser.position = fromPos.clone();
+    
+    // Rotate to point toward target
+    const up = new BABYLON.Vector3(0, 1, 0);
+    const angle = Math.acos(BABYLON.Vector3.Dot(up, direction));
+    const axis = BABYLON.Vector3.Cross(up, direction).normalize();
+    if (axis.length() > 0.001) {
+      laser.rotationQuaternion = BABYLON.Quaternion.RotationAxis(axis, angle);
+    }
+    
+    // Render on top
+    laser.renderingGroupId = 2;
+    
+    this.lasers.push({
+      mesh: laser,
+      direction: direction.clone(),
+      timer: 0,
+      hasHit: false,
+      targetPos: toPos.clone()
+    });
+  }
+
+  // Update all active lasers (move them as projectiles)
+  update(dt, playerPos, damagePlayerFn) {
+    for (let i = this.lasers.length - 1; i >= 0; i--) {
+      const laser = this.lasers[i];
+      laser.timer += dt;
+      
+      // Move laser toward target
+      const moveAmount = this.laserSpeed * dt;
+      laser.mesh.position.addInPlace(laser.direction.scale(moveAmount));
+      
+      // Check if laser has reached target area (ground level near target)
+      const distToTarget = BABYLON.Vector3.Distance(laser.mesh.position, laser.targetPos);
+      
+      // Check player hit
+      const distToPlayer = BABYLON.Vector3.Distance(laser.mesh.position, playerPos);
+      if (distToPlayer < 3 && !laser.hasHit) {
+        // Hit player!
+        laser.hasHit = true;
+        if (damagePlayerFn) {
+          damagePlayerFn(this.damage);
+        }
+        // Create explosion at hit location
+        if (this.explosionManager) {
+          this.explosionManager.spawn(laser.mesh.position.clone(), 5);
+        }
+        // Remove laser
+        laser.mesh.dispose();
+        this.lasers.splice(i, 1);
+        continue;
+      }
+      
+      // If laser reached target area or timed out, create ground explosion
+      if (distToTarget < 5 || laser.timer > 3) {
+        // Create explosion at impact point
+        if (this.explosionManager && !laser.hasHit) {
+          this.explosionManager.spawn(laser.mesh.position.clone(), 5);
+        }
+        laser.mesh.dispose();
+        this.lasers.splice(i, 1);
+        continue;
+      }
+      
+      // Fade out effect as it travels
+      if (laser.mesh.material) {
+        laser.mesh.material.alpha = 0.9 - (laser.timer * 0.2);
+      }
+    }
+  }
+
+  // Fire a volley of lasers from glasses toward player
+  fireVolley(glassesPos, playerPos) {
+    // Fire 2-3 lasers with slight spread
+    const numLasers = 2 + Math.floor(Math.random() * 2);
+    
+    for (let i = 0; i < numLasers; i++) {
+      // Add some spread to make it dodge-able
+      const spreadX = (Math.random() - 0.5) * 8;
+      const spreadZ = (Math.random() - 0.5) * 8;
+      const targetPos = playerPos.clone();
+      targetPos.x += spreadX;
+      targetPos.z += spreadZ;
+      
+      // Slight delay between each laser in volley
+      setTimeout(() => {
+        this.fireLaser(glassesPos.clone(), targetPos);
+      }, i * 100);
+    }
+  }
+}
+
 // Radar HUD update - using pooled dots for performance (PERF)
 const radarDotPool = [];
 const RADAR_DOT_POOL_SIZE = 25; // Max dots we'll ever show
@@ -2348,8 +2506,9 @@ async function createScene() {
     console.log("Boss spawn - player position:", camera.position.toString());
   }
   
-  // Store spawn position for respawning after falling off edge
-  const spawnPosition = camera.position.clone();
+  // Store spawn position for respawning after falling off edge or death
+  playerSpawnPosition = camera.position.clone();
+  lastSafePosition = camera.position.clone(); // Start with spawn as safe position
   const fallDeathThreshold = -100; // How far below ground before respawn
 
   // Get per-level RCS settings
@@ -2571,6 +2730,10 @@ async function createScene() {
   const explosionManager = new ExplosionManager(scene, currentLevel === "boss");
   const enemyManager = new EnemyManager(scene);
   enemyManager.explosionManager = explosionManager; // Wire up for explosions on hit
+  
+  // Boss laser manager (only used in boss level)
+  const bossLaserManager = currentLevel === "boss" ? new BossLaserManager(scene, explosionManager) : null;
+  let bossLaserTimer = 0;
   
   // Boss level: no regular enemies (boss fight instead)
   // Boss health and hit flash system
@@ -2998,6 +3161,28 @@ async function createScene() {
       }
     }
     
+    // Boss laser attack - fires green lasers from glasses toward player
+    if (currentLevel === "boss" && bossLaserManager && bossAlive) {
+      // Update existing lasers
+      bossLaserManager.update(dt, camera.position, damagePlayer);
+      
+      // Fire new laser volley at intervals
+      bossLaserTimer += dt;
+      if (bossLaserTimer >= bossLaserManager.fireInterval) {
+        bossLaserTimer = 0;
+        
+        // Get GLASSES mesh position for laser origin (use bounding box center for skinned mesh)
+        const glassesMesh = window.mainGlassesMesh;
+        if (glassesMesh) {
+          // Force bounding info update for animated mesh
+          glassesMesh.refreshBoundingInfo(true);
+          const boundingInfo = glassesMesh.getBoundingInfo();
+          const glassesPos = boundingInfo.boundingBox.centerWorld.clone();
+          bossLaserManager.fireVolley(glassesPos, camera.position.clone());
+        }
+      }
+    }
+    
     // Boss state is simplified - just walks around (no animation switching)
 
     // Update enemies (spawning, movement, collision)
@@ -3167,9 +3352,15 @@ async function createScene() {
     // Respawn if player falls off the edge (below death threshold)
     if (camera.position.y < fallDeathThreshold) {
       console.log("Player fell off edge! Respawning...");
-      camera.position.x = spawnPosition.x;
-      camera.position.y = spawnPosition.y;
-      camera.position.z = spawnPosition.z;
+      
+      // Use spawn position for fall respawn
+      const respawnPos = playerSpawnPosition;
+      if (respawnPos) {
+        camera.position.x = respawnPos.x;
+        camera.position.y = respawnPos.y;
+        camera.position.z = respawnPos.z;
+      }
+      
       playerVelocityY = 0;
       jumpsRemaining = maxJumps;
       
@@ -3184,6 +3375,11 @@ async function createScene() {
         hitFlash.classList.add('active');
         setTimeout(() => hitFlash.classList.remove('active'), 200);
       }
+    }
+    
+    // Update last safe position when on ground (for respawn after death)
+    if (onGround && currentGroundY > fallDeathThreshold) {
+      lastSafePosition = camera.position.clone();
     }
 
     tiler.update(camera.position);
